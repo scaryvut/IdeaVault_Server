@@ -65,15 +65,28 @@ async function run() {
         });
       }
     });
-    app.get("/comments/user/:userName", async (req, res) => {
+app.get("/comments/user/:userName", async (req, res) => {
   try {
-    const data = await commentCollection
+    const comments = await commentCollection
       .find({ userName: req.params.userName })
       .toArray();
 
-    res.send(data);
+    const enriched = await Promise.all(
+      comments.map(async (c) => {
+        const idea = await ideaCollection.findOne({
+          _id: new ObjectId(c.ideaId),
+        });
+
+        return {
+          ...c,
+          ideaTitle: idea?.title || "Unknown Idea",
+        };
+      })
+    );
+
+    res.send(enriched);
   } catch (err) {
-    res.status(500).send({ error: "Failed to fetch user comments" });
+    res.status(500).send({ error: "Failed to fetch comments" });
   }
 });
 
