@@ -107,6 +107,14 @@ app.delete("/ideas/:id", async (req, res) => {
 
   res.send(result);
 });
+app.patch("/ideas/:id", async (req, res) => {
+  const result = await ideaCollection.updateOne(
+    { _id: new ObjectId(req.params.id) },
+    { $set: req.body }
+  );
+
+  res.send(result);
+});
 
     // ================= SINGLE IDEA =================
 
