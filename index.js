@@ -100,6 +100,13 @@ app.get("/ideas/user/:userName", async (req, res) => {
     res.status(500).send({ error: "Failed to fetch user ideas" });
   }
 });
+app.delete("/ideas/:id", async (req, res) => {
+  const result = await ideaCollection.deleteOne({
+    _id: new ObjectId(req.params.id),
+  });
+
+  res.send(result);
+});
 
     // ================= SINGLE IDEA =================
 
