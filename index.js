@@ -89,6 +89,17 @@ app.get("/comments/user/:userName", async (req, res) => {
     res.status(500).send({ error: "Failed to fetch comments" });
   }
 });
+app.get("/ideas/user/:userName", async (req, res) => {
+  try {
+    const data = await ideaCollection
+      .find({ userName: req.params.userName })
+      .toArray();
+
+    res.send(data);
+  } catch (err) {
+    res.status(500).send({ error: "Failed to fetch user ideas" });
+  }
+});
 
     // ================= SINGLE IDEA =================
 
