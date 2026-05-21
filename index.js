@@ -1,13 +1,8 @@
 const express = require("express");
 const dotenv = require("dotenv");
 const cors = require("cors");
-const jwt = require("jsonwebtoken");
 
-const {
-  MongoClient,
-  ObjectId,
-  ServerApiVersion,
-} = require("mongodb");
+const { MongoClient, ObjectId, ServerApiVersion } = require("mongodb");
 
 dotenv.config();
 
@@ -16,7 +11,6 @@ const port = process.env.PORT || 5000;
 
 // ================= MIDDLEWARE =================
 
-
 app.use(
   cors({
     origin: "http://localhost:3000",
@@ -24,32 +18,6 @@ app.use(
 );
 
 app.use(express.json());
-
-// ================= JWT VERIFY =================
-
-const verifyToken = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader) {
-    return res.status(401).send({
-      message: "Unauthorized access",
-    });
-  }
-
-  const token = authHeader.split(" ")[1];
-
-  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-    if (err) {
-      return res.status(401).send({
-        message: "Invalid token",
-      });
-    }
-
-    req.user = decoded;
-
-    next();
-  });
-};
 
 // ================= DB =================
 
@@ -73,28 +41,13 @@ async function run() {
     const commentCollection = db.collection("comments");
 
     // =================================================
-    // CREATE JWT
-    // =================================================
-
-    app.post("/jwt", async (req, res) => {
-      const user = req.body;
-
-      const token = jwt.sign(user, process.env.JWT_SECRET, {
-        expiresIn: "7d",
-      });
-
-      res.send({ token });
-    });
-
-    // =================================================
     // CREATE IDEA
     // =================================================
 
-    app.post("/ideas", verifyToken, async (req, res) => {
+    app.post("/ideas", async (req, res) => {
       try {
         const idea = {
           ...req.body,
-          userEmail: req.user.email,
           likes: 0,
           views: 0,
           createdAt: new Date(),
@@ -105,10 +58,7 @@ async function run() {
         res.send(result);
       } catch (error) {
         console.log(error);
-
-        res.status(500).send({
-          message: "Failed to create idea",
-        });
+        res.status(500).send({ message: "Failed to create idea" });
       }
     });
 
@@ -118,16 +68,18 @@ async function run() {
 
     app.get("/ideas", async (req, res) => {
       try {
+        const { userEmail } = req.query;
+
+        const query = userEmail ? { userEmail } : {};
+
         const result = await ideaCollection
-          .find()
+          .find(query)
           .sort({ createdAt: -1 })
           .toArray();
 
         res.send(result);
       } catch (error) {
-        res.status(500).send({
-          message: "Failed to fetch ideas",
-        });
+        res.status(500).send({ message: "Failed to fetch ideas" });
       }
     });
 
@@ -145,9 +97,7 @@ async function run() {
 
         res.send(result);
       } catch (error) {
-        res.status(500).send({
-          message: "Failed trending ideas",
-        });
+        res.status(500).send({ message: "Failed trending ideas" });
       }
     });
 
@@ -163,72 +113,40 @@ async function run() {
 
         res.send(result);
       } catch (error) {
-        res.status(500).send({
-          message: "Invalid idea id",
-        });
+        res.status(500).send({ message: "Invalid idea id" });
       }
     });
 
     // =================================================
-    // DELETE IDEA
+    // DELETE IDEA (NO AUTH)
     // =================================================
 
-    app.delete("/ideas/:id", verifyToken, async (req, res) => {
+    app.delete("/ideas/:id", async (req, res) => {
       try {
-        const idea = await ideaCollection.findOne({
-          _id: new ObjectId(req.params.id),
-        });
-
-        // OWNER CHECK
-        if (idea.userEmail !== req.user.email) {
-          return res.status(403).send({
-            message: "Forbidden access",
-          });
-        }
-
         const result = await ideaCollection.deleteOne({
           _id: new ObjectId(req.params.id),
         });
 
         res.send(result);
       } catch (error) {
-        res.status(500).send({
-          message: "Failed to delete idea",
-        });
+        res.status(500).send({ message: "Failed to delete idea" });
       }
     });
 
     // =================================================
-    // UPDATE IDEA
+    // UPDATE IDEA (NO AUTH)
     // =================================================
 
-    app.patch("/ideas/:id", verifyToken, async (req, res) => {
+    app.patch("/ideas/:id", async (req, res) => {
       try {
-        const idea = await ideaCollection.findOne({
-          _id: new ObjectId(req.params.id),
-        });
-
-        // OWNER CHECK
-        if (idea.userEmail !== req.user.email) {
-          return res.status(403).send({
-            message: "Forbidden access",
-          });
-        }
-
         const result = await ideaCollection.updateOne(
-          {
-            _id: new ObjectId(req.params.id),
-          },
-          {
-            $set: req.body,
-          }
+          { _id: new ObjectId(req.params.id) },
+          { $set: req.body }
         );
 
         res.send(result);
       } catch (error) {
-        res.status(500).send({
-          message: "Failed to update idea",
-        });
+        res.status(500).send({ message: "Failed to update idea" });
       }
     });
 
@@ -239,21 +157,13 @@ async function run() {
     app.patch("/ideas/:id/like", async (req, res) => {
       try {
         const result = await ideaCollection.updateOne(
-          {
-            _id: new ObjectId(req.params.id),
-          },
-          {
-            $inc: {
-              likes: 1,
-            },
-          }
+          { _id: new ObjectId(req.params.id) },
+          { $inc: { likes: 1 } }
         );
 
         res.send(result);
       } catch (error) {
-        res.status(500).send({
-          message: "Failed like",
-        });
+        res.status(500).send({ message: "Failed like" });
       }
     });
 
@@ -264,23 +174,13 @@ async function run() {
     app.patch("/ideas/:id/view", async (req, res) => {
       try {
         await ideaCollection.updateOne(
-          {
-            _id: new ObjectId(req.params.id),
-          },
-          {
-            $inc: {
-              views: 1,
-            },
-          }
+          { _id: new ObjectId(req.params.id) },
+          { $inc: { views: 1 } }
         );
 
-        res.send({
-          success: true,
-        });
+        res.send({ success: true });
       } catch (error) {
-        res.status(500).send({
-          message: "Failed views",
-        });
+        res.status(500).send({ message: "Failed views" });
       }
     });
 
@@ -291,31 +191,48 @@ async function run() {
     app.get("/comments/:ideaId", async (req, res) => {
       try {
         const result = await commentCollection
-          .find({
-            ideaId: req.params.ideaId,
-          })
-          .sort({
-            createdAt: -1,
-          })
+          .find({ ideaId: req.params.ideaId })
+          .sort({ createdAt: -1 })
           .toArray();
 
         res.send(result);
       } catch (error) {
-        res.status(500).send({
-          message: "Failed comments",
-        });
+        res.status(500).send({ message: "Failed comments" });
       }
     });
+    app.get("/comments/user/:email", async (req, res) => {
+  try {
+    const email = req.params.email;
+
+    const result = await commentCollection
+      .find({ userEmail: email })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to get user comments" });
+  }
+});
 
     // =================================================
-    // ADD COMMENT
+    // ADD COMMENT (NO AUTH)
     // =================================================
 
-    app.post("/comments", verifyToken, async (req, res) => {
+    app.post("/comments", async (req, res) => {
       try {
+        const { ideaId, text, userEmail } = req.body;
+
+        if (!ideaId || !text) {
+          return res
+            .status(400)
+            .send({ message: "ideaId and text are required" });
+        }
+
         const comment = {
-          ...req.body,
-          userEmail: req.user.email,
+          ideaId,
+          text,
+          userEmail: userEmail || "anonymous",
           createdAt: new Date(),
         };
 
@@ -323,62 +240,18 @@ async function run() {
 
         res.send(result);
       } catch (error) {
-        res.status(500).send({
-          message: "Failed add comment",
-        });
+        res.status(500).send({ message: "Failed add comment" });
       }
     });
 
     // =================================================
-    // USER COMMENTS
+    // UPDATE COMMENT (NO AUTH)
     // =================================================
 
-    app.get("/comments/user/:email", verifyToken, async (req, res) => {
+    app.patch("/comments/:id", async (req, res) => {
       try {
-        if (req.params.email !== req.user.email) {
-          return res.status(403).send({
-            message: "Forbidden access",
-          });
-        }
-
-        const comments = await commentCollection
-          .find({
-            userEmail: req.params.email,
-          })
-          .sort({
-            createdAt: -1,
-          })
-          .toArray();
-
-        res.send(comments);
-      } catch (error) {
-        res.status(500).send({
-          message: "Failed user comments",
-        });
-      }
-    });
-
-    // =================================================
-    // UPDATE COMMENT
-    // =================================================
-
-    app.patch("/comments/:id", verifyToken, async (req, res) => {
-      try {
-        const comment = await commentCollection.findOne({
-          _id: new ObjectId(req.params.id),
-        });
-
-        // OWNER CHECK
-        if (comment.userEmail !== req.user.email) {
-          return res.status(403).send({
-            message: "Forbidden access",
-          });
-        }
-
         const result = await commentCollection.updateOne(
-          {
-            _id: new ObjectId(req.params.id),
-          },
+          { _id: new ObjectId(req.params.id) },
           {
             $set: {
               text: req.body.text,
@@ -389,41 +262,25 @@ async function run() {
 
         res.send(result);
       } catch (error) {
-        res.status(500).send({
-          message: "Failed update comment",
-        });
+        res.status(500).send({ message: "Failed update comment" });
       }
     });
 
     // =================================================
-    // DELETE COMMENT
+    // DELETE COMMENT (NO AUTH)
     // =================================================
 
-    app.delete("/comments/:id", verifyToken, async (req, res) => {
+    app.delete("/comments/:id", async (req, res) => {
       try {
-        const comment = await commentCollection.findOne({
-          _id: new ObjectId(req.params.id),
-        });
-
-        // OWNER CHECK
-        if (comment.userEmail !== req.user.email) {
-          return res.status(403).send({
-            message: "Forbidden access",
-          });
-        }
-
         const result = await commentCollection.deleteOne({
           _id: new ObjectId(req.params.id),
         });
 
         res.send(result);
       } catch (error) {
-        res.status(500).send({
-          message: "Failed delete comment",
-        });
+        res.status(500).send({ message: "Failed delete comment" });
       }
     });
-
   } catch (error) {
     console.log("DB CONNECTION ERROR:", error);
   }
