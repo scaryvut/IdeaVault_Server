@@ -12,9 +12,7 @@ const port = process.env.PORT || 5000;
 // ================= MIDDLEWARE =================
 
 app.use(
-  cors({
-    origin: "http://localhost:3000",
-  })
+  cors()
 );
 
 app.use(express.json());
@@ -33,7 +31,7 @@ async function run() {
   try {
     //await client.connect();
 
-    console.log("MongoDB Connected");
+  
 
     const db = client.db("ideaVault");
 
@@ -281,6 +279,7 @@ async function run() {
         res.status(500).send({ message: "Failed delete comment" });
       }
     });
+      console.log("MongoDB Connected");
   } catch (error) {
     console.log("DB CONNECTION ERROR:", error);
   }
