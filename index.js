@@ -1,7 +1,13 @@
 const express = require("express");
 const dotenv = require("dotenv");
 const cors = require("cors");
-const { MongoClient, ObjectId, ServerApiVersion } = require("mongodb");
+const jwt = require("jsonwebtoken");
+
+const {
+  MongoClient,
+  ObjectId,
+  ServerApiVersion,
+} = require("mongodb");
 
 dotenv.config();
 
@@ -9,16 +15,44 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 // ================= MIDDLEWARE =================
+
+
 app.use(
   cors({
     origin: "http://localhost:3000",
-    credentials: true,
   })
 );
 
 app.use(express.json());
 
-// ================= DB CONNECTION =================
+// ================= JWT VERIFY =================
+
+const verifyToken = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader) {
+    return res.status(401).send({
+      message: "Unauthorized access",
+    });
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(401).send({
+        message: "Invalid token",
+      });
+    }
+
+    req.user = decoded;
+
+    next();
+  });
+};
+
+// ================= DB =================
+
 const client = new MongoClient(process.env.MONGODB_URI, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -39,19 +73,30 @@ async function run() {
     const commentCollection = db.collection("comments");
 
     // =================================================
+    // CREATE JWT
+    // =================================================
+
+    app.post("/jwt", async (req, res) => {
+      const user = req.body;
+
+      const token = jwt.sign(user, process.env.JWT_SECRET, {
+        expiresIn: "7d",
+      });
+
+      res.send({ token });
+    });
+
+    // =================================================
     // CREATE IDEA
     // =================================================
-    app.post("/ideas", async (req, res) => {
+
+    app.post("/ideas", verifyToken, async (req, res) => {
       try {
         const idea = {
           ...req.body,
-
-          // 🔥 IMPORTANT
-          userId: req.body.userId || "",
-
+          userEmail: req.user.email,
           likes: 0,
           views: 0,
-
           createdAt: new Date(),
         };
 
@@ -68,30 +113,18 @@ async function run() {
     });
 
     // =================================================
-    // GET ALL IDEAS OR USER IDEAS
+    // GET IDEAS
     // =================================================
+
     app.get("/ideas", async (req, res) => {
       try {
-        const userId = req.query.userId;
-
-        let query = {};
-
-        // 🔥 FILTER USER IDEAS
-        if (userId) {
-          query = {
-            userId: userId,
-          };
-        }
-
         const result = await ideaCollection
-          .find(query)
+          .find()
           .sort({ createdAt: -1 })
           .toArray();
 
         res.send(result);
       } catch (error) {
-        console.log(error);
-
         res.status(500).send({
           message: "Failed to fetch ideas",
         });
@@ -101,6 +134,7 @@ async function run() {
     // =================================================
     // TRENDING IDEAS
     // =================================================
+
     app.get("/ideas/limit", async (req, res) => {
       try {
         const result = await ideaCollection
@@ -120,6 +154,7 @@ async function run() {
     // =================================================
     // SINGLE IDEA
     // =================================================
+
     app.get("/ideas/:id", async (req, res) => {
       try {
         const result = await ideaCollection.findOne({
@@ -137,8 +172,20 @@ async function run() {
     // =================================================
     // DELETE IDEA
     // =================================================
-    app.delete("/ideas/:id", async (req, res) => {
+
+    app.delete("/ideas/:id", verifyToken, async (req, res) => {
       try {
+        const idea = await ideaCollection.findOne({
+          _id: new ObjectId(req.params.id),
+        });
+
+        // OWNER CHECK
+        if (idea.userEmail !== req.user.email) {
+          return res.status(403).send({
+            message: "Forbidden access",
+          });
+        }
+
         const result = await ideaCollection.deleteOne({
           _id: new ObjectId(req.params.id),
         });
@@ -154,8 +201,20 @@ async function run() {
     // =================================================
     // UPDATE IDEA
     // =================================================
-    app.patch("/ideas/:id", async (req, res) => {
+
+    app.patch("/ideas/:id", verifyToken, async (req, res) => {
       try {
+        const idea = await ideaCollection.findOne({
+          _id: new ObjectId(req.params.id),
+        });
+
+        // OWNER CHECK
+        if (idea.userEmail !== req.user.email) {
+          return res.status(403).send({
+            message: "Forbidden access",
+          });
+        }
+
         const result = await ideaCollection.updateOne(
           {
             _id: new ObjectId(req.params.id),
@@ -176,6 +235,7 @@ async function run() {
     // =================================================
     // LIKE IDEA
     // =================================================
+
     app.patch("/ideas/:id/like", async (req, res) => {
       try {
         const result = await ideaCollection.updateOne(
@@ -200,6 +260,7 @@ async function run() {
     // =================================================
     // VIEW IDEA
     // =================================================
+
     app.patch("/ideas/:id/view", async (req, res) => {
       try {
         await ideaCollection.updateOne(
@@ -224,15 +285,18 @@ async function run() {
     });
 
     // =================================================
-    // GET COMMENTS BY IDEA
+    // GET COMMENTS
     // =================================================
+
     app.get("/comments/:ideaId", async (req, res) => {
       try {
         const result = await commentCollection
           .find({
             ideaId: req.params.ideaId,
           })
-          .sort({ createdAt: -1 })
+          .sort({
+            createdAt: -1,
+          })
           .toArray();
 
         res.send(result);
@@ -246,10 +310,12 @@ async function run() {
     // =================================================
     // ADD COMMENT
     // =================================================
-    app.post("/comments", async (req, res) => {
+
+    app.post("/comments", verifyToken, async (req, res) => {
       try {
         const comment = {
           ...req.body,
+          userEmail: req.user.email,
           createdAt: new Date(),
         };
 
@@ -264,10 +330,51 @@ async function run() {
     });
 
     // =================================================
+    // USER COMMENTS
+    // =================================================
+
+    app.get("/comments/user/:email", verifyToken, async (req, res) => {
+      try {
+        if (req.params.email !== req.user.email) {
+          return res.status(403).send({
+            message: "Forbidden access",
+          });
+        }
+
+        const comments = await commentCollection
+          .find({
+            userEmail: req.params.email,
+          })
+          .sort({
+            createdAt: -1,
+          })
+          .toArray();
+
+        res.send(comments);
+      } catch (error) {
+        res.status(500).send({
+          message: "Failed user comments",
+        });
+      }
+    });
+
+    // =================================================
     // UPDATE COMMENT
     // =================================================
-    app.patch("/comments/:id", async (req, res) => {
+
+    app.patch("/comments/:id", verifyToken, async (req, res) => {
       try {
+        const comment = await commentCollection.findOne({
+          _id: new ObjectId(req.params.id),
+        });
+
+        // OWNER CHECK
+        if (comment.userEmail !== req.user.email) {
+          return res.status(403).send({
+            message: "Forbidden access",
+          });
+        }
+
         const result = await commentCollection.updateOne(
           {
             _id: new ObjectId(req.params.id),
@@ -291,8 +398,20 @@ async function run() {
     // =================================================
     // DELETE COMMENT
     // =================================================
-    app.delete("/comments/:id", async (req, res) => {
+
+    app.delete("/comments/:id", verifyToken, async (req, res) => {
       try {
+        const comment = await commentCollection.findOne({
+          _id: new ObjectId(req.params.id),
+        });
+
+        // OWNER CHECK
+        if (comment.userEmail !== req.user.email) {
+          return res.status(403).send({
+            message: "Forbidden access",
+          });
+        }
+
         const result = await commentCollection.deleteOne({
           _id: new ObjectId(req.params.id),
         });
@@ -304,8 +423,9 @@ async function run() {
         });
       }
     });
+
   } catch (error) {
-    console.log(error);
+    console.log("DB CONNECTION ERROR:", error);
   }
 }
 
